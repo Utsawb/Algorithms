@@ -289,72 +289,123 @@ namespace jj
 
     class Graph
     {
-        public:
-            using Vertex = std::size_t;
-            using Weight = double;
-            struct Edge
+      public:
+        using Vertex = std::size_t;
+        using Weight = double;
+        struct Edge
+        {
+            Vertex u;
+            Vertex v;
+            Weight w;
+        };
+        using Adj_List = std::unordered_map<Vertex, Weight>;
+
+        std::unordered_map<Vertex, Adj_List> graph;
+        std::size_t num_of_vertex = 0;
+        std::size_t num_of_edge = 0;
+
+        void load_undirected_weighted(std::string file)
+        {
+            std::ifstream in(file);
+            if (!in)
             {
-                    Vertex u;
-                    Vertex v;
-                    Weight w;
-            };
-            using Adj_List = std::unordered_map<Vertex, Weight>;
-
-            std::unordered_map<Vertex, Adj_List> graph;
-            std::size_t num_of_vertex = 0;
-            std::size_t num_of_edge = 0;
-
-            void load_undirected_weighted(std::string file)
-            {
-                std::ifstream in(file);
-                if (!in)
-                {
-                    throw std::runtime_error("Cannot open file");
-                }
-
-                Edge e;
-                while (in >> e.u >> e.v >> e.w)
-                {
-                    ++num_of_edge;
-                    graph[e.u - 1][e.v - 1] = e.w;
-                    graph[e.v - 1][e.u - 1] = e.w;
-                }
-
-                num_of_vertex = graph.size();
+                throw std::runtime_error("Cannot open file");
             }
 
-            using pq_type = std::pair<Vertex, Weight>;
-            constexpr static auto pq_comp = [](const pq_type &left, const pq_type &right) {
-                return left.second > right.second;
-            };
-
-            // Make sure to zero index
-            std::vector<pq_type> Dijkstra(Vertex start)
+            Edge e;
+            while (in >> e.u >> e.v >> e.w)
             {
-                std::vector<pq_type> prev_dist(num_of_vertex, {-1, 1.0e12});
-                std::priority_queue<pq_type, std::vector<pq_type>, decltype(pq_comp)> queue(pq_comp);
+                ++num_of_edge;
+                graph[e.u - 1][e.v - 1] = e.w;
+                graph[e.v - 1][e.u - 1] = e.w;
+            }
 
-                queue.push({start, 0.0});
-                prev_dist[start] = {-1, 0.0};
+            num_of_vertex = graph.size();
+        }
 
-                while (!queue.empty())
+        using pq_type = std::pair<Vertex, Weight>;
+        constexpr static auto pq_comp = [](const pq_type &left, const pq_type &right) {
+            return left.second > right.second;
+        };
+
+        // Make sure to zero index
+        std::vector<pq_type> Dijkstra(Vertex start)
+        {
+            std::vector<pq_type> prev_dist(num_of_vertex, {-1, 1.0e12});
+            std::priority_queue<pq_type, std::vector<pq_type>, decltype(pq_comp)> queue(pq_comp);
+
+            queue.push({start, 0.0});
+            prev_dist[start] = {-1, 0.0};
+
+            while (!queue.empty())
+            {
+                auto [u, u_w] = queue.top();
+                queue.pop();
+
+                for (const auto &[v, v_w] : graph[u])
                 {
-                    auto [u, u_w] = queue.top();
-                    queue.pop();
-
-                    for (const auto &[v, v_w] : graph[u])
+                    auto alt = prev_dist[u].second + v_w;
+                    if (alt < prev_dist[v].second)
                     {
-                        auto alt = prev_dist[u].second + v_w;
-                        if (alt < prev_dist[v].second)
-                        {
-                            prev_dist[v] = {u, alt};
-                            queue.push({v, alt});
-                        }
+                        prev_dist[v] = {u, alt};
+                        queue.push({v, alt});
                     }
                 }
-
-                return prev_dist;
             }
+
+            return prev_dist;
+        }
     };
+
+    /*
+        score_t: the type that the score will be eg float etc
+        node_t: the type that each node of the graph will be, eg game state
+        index_t: the type that will be the index type, usually std::size_t
+        is_terminal: function that checks if game is done
+        heuristic: function that returns a score for the node
+        subsequent: function that generates subsequent nodes to check (this is children)
+     */
+    template <typename score_t, typename node_t, typename index_t, auto is_terminal, auto heuristic, auto subsequent>
+    score_t alphabeta(const node_t &node, const index_t &depth, score_t alpha, score_t beta,
+                      const bool &maximizing_player)
+    {
+        if (depth == 0 || is_terminal(node))
+        {
+            return heuristic(node);
+        }
+
+        std::vector<node_t> children = subsequent(node);
+
+        if (maximizing_player)
+        {
+            score_t value = std::numeric_limits<score_t>::min() / 2;
+            for (const node_t &child : children)
+            {
+                value = std::max(value, alphabeta<score_t, node_t, index_t, is_terminal, heuristic, subsequent>(
+                                            child, depth - 1, alpha, beta, false));
+                if (value >= beta)
+                {
+                    break;
+                }
+                alpha = std::max(alpha, value);
+            }
+            return value;
+        }
+        else
+        {
+            score_t value = std::numeric_limits<score_t>::max() / 2;
+            for (const node_t &child : children)
+            {
+                value = std::min(value, alphabeta<score_t, node_t, index_t, is_terminal, heuristic, subsequent>(
+                                            child, depth - 1, alpha, beta, true));
+                if (value <= alpha)
+                {
+                    break;
+                }
+                beta = std::min(beta, value);
+            }
+            return value;
+        }
+    }
 
 } // namespace jj
